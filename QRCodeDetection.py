@@ -1,11 +1,27 @@
-
 from matplotlib import pyplot
 from matplotlib.patches import Rectangle
-
+from pyzbar.pyzbar import decode
 import imageIO.png
 import math
 import statistics
-import numpy
+from numpy import asarray
+
+
+class Queue:
+        def __init__(self):
+            self.items = []
+
+        def isEmpty(self):
+            return self.items == []
+
+        def enqueue(self, item):
+            self.items.insert(0,item)
+
+        def dequeue(self):
+            return self.items.pop()
+
+        def size(self):
+            return len(self.items)
 
 
 def createInitializedGreyscalePixelArray(image_width, image_height, initValue = 0):
@@ -145,18 +161,16 @@ def contrastStretch(array, image_width, image_height):
     return scaledArray
 
 def computeBoxAveraging3x3(pixel_array, image_width, image_height):
-    mean_array = createInitializedGreyscalePixelArray(image_width, image_height)
-    mean_filter = [ [1,  1,  1], 
-                    [1,  1,  1], 
-                    [1,  1,  1]]
-    
-    for x in range(1, image_height -1):
-        for y in range(1, image_width -1):
-            mean_array[x][y] =    ((mean_filter[0][0] * pixel_array[x-1][y-1]) + (mean_filter[0][1] * pixel_array[x-1][y]) + (mean_filter[0][2] * pixel_array[x-1][y+1]) +
-                                   (mean_filter[1][0] * pixel_array[x][y-1])   +         pixel_array[x][y]                 + (mean_filter[1][2] * pixel_array[x][y+1]) + 
-                                   (mean_filter[2][0] * pixel_array[x+1][y-1]) + (mean_filter[2][1] * pixel_array[x+1][y]) + (mean_filter[2][2] * pixel_array[x+1][y+1])) /9
+    BoxAverage_array = createInitializedGreyscalePixelArray(image_width, image_height)
 
-    return mean_array
+    for y in range(1, image_height - 1):
+        for x in range(1, image_width - 1):
+            top_row = pixel_array[y - 1][x - 1] + pixel_array[y - 1][x] + pixel_array[y - 1][x + 1]
+            middle_row = pixel_array[y][x - 1] + pixel_array[y][x] + pixel_array[y][x + 1]
+            bottom_row = pixel_array[y + 1][x - 1] + pixel_array[y + 1][x] + pixel_array[y + 1][x + 1]
+            BoxAverage_array[y][x] = (top_row + middle_row + bottom_row) / 9
+
+    return BoxAverage_array
 
 def convertBinary(pixel_array, threshHold, image_width, image_height):
     binaryArray = createInitializedGreyscalePixelArray(image_width, image_height);
@@ -165,95 +179,99 @@ def convertBinary(pixel_array, threshHold, image_width, image_height):
             if  pixel_array[i][j] < threshHold:
                 binaryArray[i][j] = 0
             else:
-                binaryArray[i][j] = 1
+                binaryArray[i][j] = 255
     return binaryArray
 
 def computeConnectedComponentLabeling(pixel_array, image_width, image_height):
-    ConnectedComponentLabel = createInitializedGreyscalePixelArray(image_width, image_height)
-    visited = createInitializedGreyscalePixelArray(image_width, image_height)
-    currentLabel = 1
-    d = {}
-    for i in range(image_height):
-        for j in range(image_width):
+    Labeled_img = createInitializedGreyscalePixelArray(image_width, image_height)
+    Visited = createInitializedGreyscalePixelArray(image_width, image_height)
+    Dictionary = {}
 
-            if (pixel_array[i][j] > 0 and visited[i][j] == 0):
+    Current_label = 1
+
+    for y in range(image_height):
+        for x in range(image_width):
+
+            if (pixel_array[y][x] != 0) and (Visited[y][x] == 0):
                 q = Queue()
-                q.enqueue([i, j])
+                q.enqueue([y, x])
                 count = 0
-                while not q.isEmpty():
+                while q.size() != 0:
                     n = q.dequeue()
-                    ConnectedComponentLabel[n[0]][n[1]] = currentLabel
-                    
-                    if ((n[1]-1 >= 0) and (pixel_array[n[0]][n[1]-1] > 0) and (visited[n[0]][n[1]-1] == 0)):
-                        q.enqueue([n[0], n[1]-1])
-                        ConnectedComponentLabel[n[0]][n[1]-1] = currentLabel
-                        visited[n[0]][n[1]-1] = 1
-                        count += 1
-                        
-                    if ((n[1]+1 < image_width) and (pixel_array[n[0]][n[1]+1] > 0) and (visited[n[0]][n[1]+1] == 0) ):
-                        q.enqueue([n[0], n[1]+1])
-                        ConnectedComponentLabel[n[0]][n[1]+1] = currentLabel
-                        visited[n[0]][n[1]+1] = 1
-                        count += 1
-                        
-                    if (( n[0]-1 >= 0) and (pixel_array[n[0]-1][n[1]] > 0) and (visited[n[0]-1][n[1]] == 0)):
-                        q.enqueue([n[0]-1, n[1]])
-                        ConnectedComponentLabel[n[0]-1][n[1]] = currentLabel
-                        visited[n[0]-1][n[1]] = 1
-                        count += 1
-                    if (( n[0]+1 < image_height) and (pixel_array[n[0]+1][n[1]] > 0) and (visited[n[0]+1][n[1]] == 0)):
-                        q.enqueue([n[0]+1, n[1]])
-                        ConnectedComponentLabel[n[0]+1][n[1]] = currentLabel
-                        visited[n[0]+1][n[1]] = 1
-                        count += 1
-                        
-                d.update({currentLabel: count})
-                currentLabel += 1
+                    Labeled_img[n[0]][n[1]] = Current_label
 
-    v = list(d.values())
-    k = list(d.keys())
+                    if (n[1] - 1 >= 0) and (pixel_array[n[0]][n[1] - 1] != 0) and (Visited[n[0]][n[1] - 1] == 0):
+                        q.enqueue([n[0], n[1] - 1])
+                        Visited[n[0]][n[1] - 1] = 1
+                        Labeled_img[n[0]][n[1] - 1] = Current_label
+                        count += 1
 
-    mostLabels = k[v.index(max(v))]
-    mostLabelledImage = createInitializedGreyscalePixelArray(image_width, image_height)
+                    if ((n[1] + 1 < image_width) and (pixel_array[n[0]][n[1] + 1] != 0) and (
+                            Visited[n[0]][n[1] + 1] == 0)):
+                        q.enqueue([n[0], n[1] + 1])
+                        Visited[n[0]][n[1] + 1] = 1
+                        Labeled_img[n[0]][n[1] + 1] = Current_label
+                        count += 1
 
-    for x in range(image_height):
-        for y in range(image_width):
-            
-            if (ConnectedComponentLabel[x][y] == mostLabels):
-                mostLabelledImage[x][y] = ConnectedComponentLabel[x][y]
+                    if (n[0] - 1 >= 0) and (pixel_array[n[0] - 1][n[1]] != 0) and (Visited[n[0] - 1][n[1]] == 0):
+                        q.enqueue([n[0] - 1, n[1]])
+                        Visited[n[0] - 1][n[1]] = 1
+                        Labeled_img[n[0] - 1][n[1]] = Current_label
+                        count += 1
+
+                    if (n[0] + 1 < image_height) and (pixel_array[n[0] + 1][n[1]] != 0) and (Visited[n[0] + 1][n[1]] == 0):
+                        q.enqueue([n[0] + 1, n[1]])
+                        Visited[n[0] + 1][n[1]] = 1
+                        Labeled_img[n[0] + 1][n[1]] = Current_label
+                        count += 1
+
+                Dictionary.update({Current_label: count})
+                Current_label += 1
+
+    max_key = max(Dictionary, key=Dictionary.get)
+    component_analysis_array = createInitializedGreyscalePixelArray(image_width, image_height)
+
+    for y in range(image_height):
+        for x in range(image_width):
+            if Labeled_img[y][x] == max_key:
+                component_analysis_array[y][x] = 255
             else:
-                mostLabelledImage[x][y] = 0
-                
-    return mostLabelledImage    
+                component_analysis_array[y][x] = 0
 
-class Queue:
-        def __init__(self):
-            self.items = []
+    return component_analysis_array
 
-        def isEmpty(self):
-            return self.items == []
 
-        def enqueue(self, item):
-            self.items.insert(0,item)
-
-        def dequeue(self):
-            return self.items.pop()
-
-        def size(self):
-            return len(self.items)
+def boxCoordinates(pixel_array, image_width, image_height):
+    min_x = image_width
+    min_y = image_height
+    max_x = 0
+    max_y = 0
     
+    for y in range(image_height):
+        for x in range(image_width):
+            if pixel_array[y][x] == 255:
+                if x < min_x:
+                    min_x = x
+                if y < min_y:
+                    min_y = y
+                if x > max_x:
+                    max_x = x
+                if y > max_y:
+                    max_y = y
+
+    return (min_x, min_y, max_x, max_y)
 
 def main():
     filename = "./images/covid19QRCode/poster1small.png"
 
-    # we read in the png file, and receive three pixel arrays for red, green and blue components, respectively
-    # each pixel array contains 8 bit integer values between 0 and 255 encoding the color values
     (image_width, image_height, px_array_r, px_array_g, px_array_b) = readRGBImageToSeparatePixelArrays(filename)
     
     #STEP 1
     greyRGBimage = computeRGBToGreyscale(px_array_r, px_array_g, px_array_b, image_width, image_height)
     scaledGreyRGBimage = contrastStretch(greyRGBimage, image_width, image_height)
     #pyplot.imshow(scaledGreyRGBimage, cmap="gray")
+    pixel_array = computeRGBToGreyscale(px_array_r, px_array_g, px_array_b, image_width, image_height)
+
 
     #STEP 2
     gy = computeHorizontalEdgesSobel(scaledGreyRGBimage, image_width, image_height)
@@ -274,7 +292,6 @@ def main():
             meanSmooth = computeBoxAveraging3x3(gradientMagnitude, image_width, image_height)
         else:
             meanSmooth = computeBoxAveraging3x3(meanSmooth, image_width, image_height)
-
     meanSmoothStretched = contrastStretch(meanSmooth, image_width, image_height)
     #pyplot.imshow(meanSmooth, cmap="gray")
 
@@ -288,26 +305,39 @@ def main():
     #pyplot.imshow(largestConnectedComponent, cmap="gray")
 
     #STEP 9
-    position = []
-    for m in range(image_height):
-        for n in range(image_width):
-            if largestConnectedComponent[m][n] > 0:
-                position.append([m , n])          
-    minX = position[0][0]
-    minY = position[0][1]
-    Xmax = position[-1][0]
-    Ymax = position[-1][1]
+    (min_x, min_y, max_x, max_y) = boxCoordinates(largestConnectedComponent, image_width, image_height)
     
-    width = Xmax - minX
-    height = Ymax - minY
+    x_cord = min_x
+    y_cord = min_y 
+    width = max_x - min_x
+    height = max_y - min_y
+    pyplot.imshow(prepareRGBImageForImshowFromIndividualArrays(px_array_r, px_array_g, px_array_b, image_width, image_height))
     
     axes = pyplot.gca()
-    rect = Rectangle( (minX-30, minY+35), width, height, linewidth=3, edgecolor='g', facecolor='none' )
-    axes.add_patch(rect)
-    
-    pyplot.imshow(prepareRGBImageForImshowFromIndividualArrays(px_array_r, px_array_g, px_array_b, image_width, image_height))
-    pyplot.show()
+    # create a width x height rectangle that starts at location x_cord, y_cord, with a line width of 3
+    rectangle = Rectangle((x_cord, y_cord), width, height, linewidth=3, edgecolor='g', facecolor='none')
 
+    axes.add_patch(rectangle)
+
+    # Extension - QR Code Decoder
+    qrCode_array = createInitializedGreyscalePixelArray(width, height)
+    for y in range(height):  # These for loops cut out the QR Code from the pixel_array and store it in qrCode_array
+        for x in range(width):
+            qrCode_array[y][x] = pixel_array[y + min_y][x + min_x]
+
+    qrCode = asarray(qrCode_array)
+    d = decode(qrCode)
+    data = d[0].data.decode()
+
+    print()
+    print("*" * 10)
+    print("*" * 10)
+    print("QR Code Decoded Successfully \n" + data)
+    print("*" * 10)
+    print("*" * 10)
+    
+    
+    pyplot.show()
 
 if __name__ == "__main__":
     main()
